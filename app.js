@@ -1,6 +1,7 @@
 const STORAGE_KEY = "share-tracker-state-v2";
 const LEGACY_STORAGE_KEY = "share-tracker-state-v1";
 const ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query";
+const DEFAULT_USD_TO_GBP_RATE = 0.79;
 
 const currencyFormatter = new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -92,6 +93,10 @@ function getDefaultState() {
     quotes: {},
     history: [],
     historicalQuotes: {},
+    fx: {
+      usdToGbpRate: DEFAULT_USD_TO_GBP_RATE,
+      updatedAt: "",
+    },
     settings: {
       apiKey: "",
     },
@@ -161,13 +166,14 @@ function handleHoldingSubmit(event) {
 
 async function refreshNewHoldingData(ticker) {
   try {
+    await refreshExchangeRates([ticker]);
     await fetchAndStoreQuote(ticker);
     await fetchAndStoreHistoricalQuotes(ticker);
     saveState();
     render();
     highlightHoldingsSection();
     setHoldingStatus(`${ticker} saved and portfolio breakdown refreshed.`, "success");
-    setApiStatus(`${ticker} updated from Alpha Vantage.`, "success");
+    setApiStatus(`${ticker} updated from Alpha Vantage, with USD holdings converted to GBP.`, "success");
   } catch (error) {
     setHoldingStatus(
       `${ticker} saved, but live quote refresh did not complete. You can refresh holdings later.`,
@@ -198,6 +204,7 @@ function handleQuoteSubmit(event) {
   state.quotes[ticker] = {
     price,
     previousClose,
+    currency: getTickerCurrency(ticker),
     updatedAt: new Date().toISOString(),
     source: "manual",
   };
@@ -239,10 +246,11 @@ function handleTableKeydown(event) {
 
 function render() {
   const rows = state.holdings.map((holding) => {
-    const quote = state.quotes[holding.ticker] || {
+    const rawQuote = state.quotes[holding.ticker] || {
       price: 0,
       previousClose: 0,
     };
+    const quote = convertQuoteToGbp(holding.ticker, rawQuote);
     const currentValue = holding.shares * quote.price;
     const previousValue = holding.shares * quote.previousClose;
     const dayChange = currentValue - previousValue;
@@ -377,6 +385,8 @@ async function refreshAllQuotes() {
   let refreshed = 0;
 
   try {
+    await refreshExchangeRates();
+
     for (const holding of state.holdings) {
       await fetchAndStoreQuote(holding.ticker);
       refreshed += 1;
@@ -404,6 +414,7 @@ async function refreshQuoteForTicker(ticker) {
   setApiStatus(`Refreshing ${ticker}...`, "pending");
 
   try {
+    await refreshExchangeRates([ticker]);
     await fetchAndStoreQuote(ticker);
     await fetchAndStoreHistoricalQuotes(ticker);
     saveState();
@@ -446,6 +457,7 @@ async function fetchAndStoreQuote(ticker) {
   const quote = payload["Global Quote"];
   const price = Number(quote?.["05. price"]);
   const previousClose = Number(quote?.["08. previous close"]);
+  const currency = getTickerCurrency(ticker);
 
   if (!quote || !Number.isFinite(price) || !Number.isFinite(previousClose)) {
     throw new Error(`No usable quote came back for ${ticker}. Check the ticker or try again later.`);
@@ -454,6 +466,7 @@ async function fetchAndStoreQuote(ticker) {
   state.quotes[ticker] = {
     price,
     previousClose,
+    currency,
     updatedAt: new Date().toISOString(),
     source: "alpha-vantage",
   };
@@ -510,6 +523,45 @@ async function refreshHistoricalSeries() {
   for (const holding of state.holdings) {
     await fetchAndStoreHistoricalQuotes(holding.ticker);
   }
+}
+
+async function refreshExchangeRates(tickers = state.holdings.map((holding) => holding.ticker)) {
+  const hasUsdHoldings = tickers.some((ticker) => getTickerCurrency(ticker) === "USD");
+
+  if (!hasUsdHoldings || !state.settings.apiKey) {
+    return;
+  }
+
+  const params = new URLSearchParams({
+    function: "CURRENCY_EXCHANGE_RATE",
+    from_currency: "USD",
+    to_currency: "GBP",
+    apikey: state.settings.apiKey,
+  });
+  const response = await fetch(`${ALPHA_VANTAGE_URL}?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error("Could not refresh the USD to GBP exchange rate.");
+  }
+
+  const payload = await response.json();
+
+  if (payload.Note) {
+    throw new Error("Alpha Vantage rate limit reached while loading USD to GBP exchange rates. Please wait a minute and try again.");
+  }
+
+  if (payload.Information) {
+    throw new Error(payload.Information);
+  }
+
+  const rate = Number(payload["Realtime Currency Exchange Rate"]?.["5. Exchange Rate"]);
+
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error("No usable USD to GBP exchange rate came back from Alpha Vantage.");
+  }
+
+  state.fx.usdToGbpRate = rate;
+  state.fx.updatedAt = new Date().toISOString();
 }
 
 async function verifyTicker(ticker) {
@@ -728,6 +780,7 @@ function getThirtyDayHistory() {
 function getChartHistory(rows) {
   const historicalRows = rows
     .map((row) => ({
+      ticker: row.ticker,
       shares: row.shares,
       series: Array.isArray(state.historicalQuotes[row.ticker]) ? state.historicalQuotes[row.ticker] : [],
     }))
@@ -749,7 +802,7 @@ function getChartHistory(rows) {
       for (const row of historicalRows) {
         const entry = row.series.find((item) => item.date === date);
         if (entry) {
-          total += entry.close * row.shares;
+          total += convertAmountToGbp(entry.close, getTickerCurrency(row.ticker)) * row.shares;
           found = true;
         }
       }
@@ -901,6 +954,39 @@ function normalizeTickerForApi(ticker) {
   }
 
   return ticker;
+}
+
+function getTickerCurrency(ticker) {
+  return ticker.endsWith(".L") || ticker.endsWith(".LON") ? "GBP" : "USD";
+}
+
+function getUsdToGbpRate() {
+  return Number.isFinite(state.fx?.usdToGbpRate) && state.fx.usdToGbpRate > 0
+    ? state.fx.usdToGbpRate
+    : DEFAULT_USD_TO_GBP_RATE;
+}
+
+function convertAmountToGbp(value, currency) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  if (currency === "USD") {
+    return value * getUsdToGbpRate();
+  }
+
+  return value;
+}
+
+function convertQuoteToGbp(ticker, quote) {
+  const currency = quote.currency || getTickerCurrency(ticker);
+
+  return {
+    ...quote,
+    currency,
+    price: convertAmountToGbp(quote.price, currency),
+    previousClose: convertAmountToGbp(quote.previousClose, currency),
+  };
 }
 
 function formatCurrency(value) {
