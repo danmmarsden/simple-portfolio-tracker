@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Portfolio Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="page-header">
+        <h1>Simple Portfolio Tracker</h1>
+        <p class="hero-text">
+          Add your holdings, update daily prices, and see how much your
+          portfolio moved by the end of each market day.
+        </p>
+      </header>
+
+      <main class="layout">
+        <section class="card summary-card">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Summary</p>
+              <h2>Your portfolio today</h2>
+            </div>
+          </div>
+
+          <div class="summary-table" role="table" aria-label="Portfolio summary">
+            <div class="summary-table-row summary-table-head" role="row">
+              <div role="columnheader">Total value</div>
+              <div role="columnheader">Daily gain/loss</div>
+              <div role="columnheader">Daily move</div>
+            </div>
+            <div class="summary-table-row summary-table-values" role="row">
+              <div role="cell"><strong id="total-value">£0.00</strong></div>
+              <div role="cell"><strong id="total-change">£0.00</strong></div>
+              <div role="cell"><strong id="total-change-percent">0.00%</strong></div>
+            </div>
+          </div>
+          <p id="summary-date" class="summary-date"></p>
+          <div class="summary-chart-card">
+            <div class="summary-chart-header">
+              <p class="summary-chart-title">30-day profit/loss</p>
+              <p id="summary-chart-range" class="summary-chart-range"></p>
+            </div>
+            <svg
+              id="summary-chart"
+              class="summary-chart"
+              viewBox="0 0 320 120"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="Portfolio profit and loss over the last 30 days"
+            ></svg>
+            <p id="summary-chart-empty" class="summary-chart-empty hidden">
+              History will appear here as daily snapshots build up.
+            </p>
+          </div>
+        </section>
+
+        <section id="holdings-section" class="card table-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Holdings</p>
+              <h2>Portfolio breakdown</h2>
+            </div>
+            <div class="holdings-toolbar">
+              <p class="table-note">Daily values use current price versus previous close.</p>
+              <button id="refresh-all" class="icon-button toolbar-icon-button" type="button" aria-label="Refresh all holdings" title="Refresh all holdings">
+                <span aria-hidden="true">↻</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>Shares</th>
+                  <th>Price</th>
+                  <th>Value</th>
+                  <th>Day change</th>
+                  <th class="actions-heading" aria-label="Actions"></th>
+                </tr>
+              </thead>
+              <tbody id="holdings-table-body"></tbody>
+              <tfoot id="holdings-table-foot"></tfoot>
+            </table>
+          </div>
+          <p id="empty-state" class="empty-state">
+            No holdings yet. Add your first share above to get started.
+          </p>
+          <p id="holdings-last-updated" class="table-meta hidden"></p>
+        </section>
+
+        <section class="card forms-card">
+          <div class="forms-grid">
+            <form id="holding-form" class="form-panel">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow">Holdings</p>
+                  <h2>Add a share</h2>
+                </div>
+              </div>
+
+              <div class="holding-fields-inline">
+                <label>
+                  Ticker
+                  <input
+                    id="ticker-input"
+                    name="ticker"
+                    placeholder="AAPL"
+                    maxlength="10"
+                    required
+                  />
+                </label>
+
+                <label>
+                  Number of shares
+                  <input
+                    id="shares-input"
+                    name="shares"
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    placeholder="10"
+                    required
+                  />
+                </label>
+              </div>
+
+              <p id="holding-status" class="status-text" aria-live="polite">
+                Tickers are syntax-checked, and with an API key the app will also try to verify them.
+              </p>
+
+              <div class="inline-actions holding-actions-inline">
+                <button class="primary-button" type="submit">Save holding</button>
+                <button id="clear-holding-form" class="ghost-button" type="button">
+                  Clear form
+                </button>
+              </div>
+            </form>
+
+            <section class="form-panel collapsible-panel">
+              <button
+                id="toggle-market-data"
+                class="collapse-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="market-data-content"
+              >
+                <span>
+                  <span class="eyebrow">Market Data</span>
+                  <strong>Connect Alpha Vantage</strong>
+                </span>
+                <span id="market-data-toggle-label">Show</span>
+              </button>
+
+              <div id="market-data-content" class="collapsed-content hidden">
+                <form id="settings-form" class="nested-form">
+                  <label>
+                    API key
+                    <input
+                      id="api-key-input"
+                      name="apiKey"
+                      placeholder="Enter your Alpha Vantage key"
+                      autocomplete="off"
+                    />
+                  </label>
+
+                  <p class="help-text">
+                    Free keys are available from
+                    <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noreferrer">
+                      Alpha Vantage
+                    </a>.
+                    Their free quote endpoint is typically end-of-day for all users.
+                  </p>
+
+                  <div class="inline-actions">
+                    <button class="primary-button" type="submit">Save key</button>
+                    <button id="clear-api-key" class="ghost-button" type="button">
+                      Clear key
+                    </button>
+                  </div>
+
+                  <p id="api-status" class="status-text" aria-live="polite">
+                    Add your API key, then use Refresh prices to pull quotes for your holdings.
+                  </p>
+                </form>
+              </div>
+            </section>
+
+            <section class="form-panel collapsible-panel">
+              <button
+                id="toggle-manual-quote"
+                class="collapse-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="manual-quote-content"
+              >
+                <span>
+                  <span class="eyebrow">Prices</span>
+                  <strong>Manual daily quote</strong>
+                </span>
+                <span id="manual-quote-toggle-label">Show</span>
+              </button>
+
+              <div id="manual-quote-content" class="collapsed-content hidden">
+                <form id="quote-form" class="nested-form">
+                  <p class="help-text">
+                    This is a fallback. Use it if you want to enter a price yourself
+                    or if the API is unavailable or rate-limited.
+                  </p>
+
+                  <label>
+                    Ticker
+                    <input
+                      id="quote-ticker-input"
+                      name="ticker"
+                      placeholder="AAPL"
+                      maxlength="10"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Current price
+                    <input
+                      id="price-input"
+                      name="price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="212.45"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Previous close
+                    <input
+                      id="previous-close-input"
+                      name="previousClose"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="209.10"
+                      required
+                    />
+                  </label>
+
+                  <button class="secondary-button" type="submit">
+                    Save quote
+                  </button>
+                </form>
+              </div>
+            </section>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
