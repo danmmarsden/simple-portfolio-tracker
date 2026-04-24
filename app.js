@@ -93,6 +93,7 @@ function getDefaultState() {
     quotes: {},
     history: [],
     historicalQuotes: {},
+    historicalUpdatedAt: {},
     fx: {
       usdToGbpRate: DEFAULT_USD_TO_GBP_RATE,
       updatedAt: "",
@@ -167,8 +168,8 @@ function handleHoldingSubmit(event) {
 async function refreshNewHoldingData(ticker) {
   try {
     await refreshExchangeRates([ticker]);
-    await fetchAndStoreQuote(ticker);
-    await fetchAndStoreHistoricalQuotes(ticker);
+    await fetchAndStoreQuote(ticker, { force: false });
+    await fetchAndStoreHistoricalQuotes(ticker, { force: false });
     saveState();
     render();
     highlightHoldingsSection();
@@ -383,20 +384,38 @@ async function refreshAllQuotes() {
   setApiStatus(`Refreshing ${state.holdings.length} holding${state.holdings.length === 1 ? "" : "s"}...`, "pending");
 
   let refreshed = 0;
+  let cached = 0;
+  let historyRefreshed = 0;
 
   try {
     await refreshExchangeRates();
 
     for (const holding of state.holdings) {
-      await fetchAndStoreQuote(holding.ticker);
-      refreshed += 1;
+      const didRefresh = await fetchAndStoreQuote(holding.ticker, { force: false });
+      if (didRefresh) {
+        refreshed += 1;
+      } else {
+        cached += 1;
+      }
     }
 
-    await refreshHistoricalSeries();
+    historyRefreshed = await refreshHistoricalSeries();
 
     saveState();
     render();
-    setApiStatus(`Updated ${refreshed} holding${refreshed === 1 ? "" : "s"} from Alpha Vantage.`, "success");
+    const parts = [];
+    parts.push(
+      refreshed > 0
+        ? `Updated ${refreshed} holding${refreshed === 1 ? "" : "s"}`
+        : "No holdings needed a quote refresh"
+    );
+    if (cached > 0) {
+      parts.push(`${cached} used cached prices`);
+    }
+    if (historyRefreshed > 0) {
+      parts.push(`${historyRefreshed} historical series refreshed`);
+    }
+    setApiStatus(`${parts.join(". ")}.`, "success");
   } catch (error) {
     setApiStatus(error.message, "error");
   } finally {
@@ -415,11 +434,15 @@ async function refreshQuoteForTicker(ticker) {
 
   try {
     await refreshExchangeRates([ticker]);
-    await fetchAndStoreQuote(ticker);
-    await fetchAndStoreHistoricalQuotes(ticker);
+    const didRefreshQuote = await fetchAndStoreQuote(ticker, { force: false });
+    const didRefreshHistory = await fetchAndStoreHistoricalQuotes(ticker, { force: false });
     saveState();
     render();
-    setApiStatus(`${ticker} updated from Alpha Vantage.`, "success");
+    if (didRefreshQuote || didRefreshHistory) {
+      setApiStatus(`${ticker} updated from Alpha Vantage.`, "success");
+    } else {
+      setApiStatus(`${ticker} is already up to date, so the cached data was reused.`, "success");
+    }
   } catch (error) {
     setApiStatus(error.message, "error");
   } finally {
@@ -427,7 +450,11 @@ async function refreshQuoteForTicker(ticker) {
   }
 }
 
-async function fetchAndStoreQuote(ticker) {
+async function fetchAndStoreQuote(ticker, options = {}) {
+  if (!options.force && isQuoteFresh(ticker)) {
+    return false;
+  }
+
   const apiTicker = normalizeTickerForApi(ticker);
   const params = new URLSearchParams({
     function: "GLOBAL_QUOTE",
@@ -470,9 +497,15 @@ async function fetchAndStoreQuote(ticker) {
     updatedAt: new Date().toISOString(),
     source: "alpha-vantage",
   };
+
+  return true;
 }
 
-async function fetchAndStoreHistoricalQuotes(ticker) {
+async function fetchAndStoreHistoricalQuotes(ticker, options = {}) {
+  if (!options.force && isHistoricalSeriesFresh(ticker)) {
+    return false;
+  }
+
   const apiTicker = normalizeTickerForApi(ticker);
   const params = new URLSearchParams({
     function: "TIME_SERIES_DAILY_ADJUSTED",
@@ -517,18 +550,28 @@ async function fetchAndStoreHistoricalQuotes(ticker) {
     .filter((entry) => Number.isFinite(entry.close))
     .sort((left, right) => left.date.localeCompare(right.date))
     .slice(-30);
+  state.historicalUpdatedAt[ticker] = new Date().toISOString();
+
+  return true;
 }
 
 async function refreshHistoricalSeries() {
+  let refreshed = 0;
+
   for (const holding of state.holdings) {
-    await fetchAndStoreHistoricalQuotes(holding.ticker);
+    const didRefresh = await fetchAndStoreHistoricalQuotes(holding.ticker, { force: false });
+    if (didRefresh) {
+      refreshed += 1;
+    }
   }
+
+  return refreshed;
 }
 
 async function refreshExchangeRates(tickers = state.holdings.map((holding) => holding.ticker)) {
   const hasUsdHoldings = tickers.some((ticker) => getTickerCurrency(ticker) === "USD");
 
-  if (!hasUsdHoldings || !state.settings.apiKey) {
+  if (!hasUsdHoldings || !state.settings.apiKey || isFxRateFresh()) {
     return;
   }
 
@@ -958,6 +1001,49 @@ function normalizeTickerForApi(ticker) {
 
 function getTickerCurrency(ticker) {
   return ticker.endsWith(".L") || ticker.endsWith(".LON") ? "GBP" : "USD";
+}
+
+function isSameLocalDay(left, right) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function isTimestampFromToday(value) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return isSameLocalDay(date, new Date());
+}
+
+function isQuoteFresh(ticker) {
+  const quote = state.quotes[ticker];
+  if (!quote || quote.source === "manual") {
+    return false;
+  }
+
+  return isTimestampFromToday(quote.updatedAt);
+}
+
+function isHistoricalSeriesFresh(ticker) {
+  const series = state.historicalQuotes[ticker];
+  if (!Array.isArray(series) || series.length === 0) {
+    return false;
+  }
+
+  return isTimestampFromToday(state.historicalUpdatedAt?.[ticker]);
+}
+
+function isFxRateFresh() {
+  return isTimestampFromToday(state.fx?.updatedAt);
 }
 
 function getUsdToGbpRate() {
