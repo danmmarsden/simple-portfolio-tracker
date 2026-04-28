@@ -58,6 +58,7 @@ elements.toggleManualQuote.addEventListener("click", toggleManualQuotePanel);
 
 elements.apiKeyInput.value = state.settings.apiKey;
 render();
+void maybeAutoRefreshStaleData();
 
 function loadState() {
   const raw =
@@ -287,7 +288,9 @@ function render() {
   elements.totalChange.className = getSummaryClass(totalChange);
   elements.totalChangePercent.textContent = `${formatSignedPercent(totalChangePercent)}`;
   elements.totalChangePercent.className = getSummaryClass(totalChange);
-  elements.summaryDate.textContent = `As of ${formatSummaryDate(new Date())}`;
+  elements.summaryDate.textContent = lastUpdatedAt
+    ? `Prices last updated ${formatUpdatedTimestamp(lastUpdatedAt)}`
+    : `As of ${formatSummaryDate(new Date())}`;
   renderSummaryChart(chartHistory);
 
   elements.tableBody.innerHTML = rows
@@ -416,6 +419,66 @@ async function refreshAllQuotes() {
       parts.push(`${historyRefreshed} historical series refreshed`);
     }
     setApiStatus(`${parts.join(". ")}.`, "success");
+  } catch (error) {
+    setApiStatus(error.message, "error");
+  } finally {
+    setBusyState(false);
+  }
+}
+
+async function maybeAutoRefreshStaleData() {
+  if (!state.settings.apiKey || state.holdings.length === 0) {
+    return;
+  }
+
+  const staleTickers = state.holdings
+    .map((holding) => holding.ticker)
+    .filter((ticker) => !isQuoteFresh(ticker) || !isHistoricalSeriesFresh(ticker));
+  const needsFxRefresh = state.holdings.some((holding) => getTickerCurrency(holding.ticker) === "USD") && !isFxRateFresh();
+
+  if (!staleTickers.length && !needsFxRefresh) {
+    return;
+  }
+
+  setBusyState(true);
+  setApiStatus("Checking for fresh market data...", "pending");
+
+  let refreshedQuotes = 0;
+  let refreshedHistory = 0;
+
+  try {
+    await refreshExchangeRates(
+      needsFxRefresh ? state.holdings.map((holding) => holding.ticker) : staleTickers
+    );
+
+    for (const ticker of staleTickers) {
+      const didRefreshQuote = await fetchAndStoreQuote(ticker, { force: false });
+      const didRefreshHistory = await fetchAndStoreHistoricalQuotes(ticker, { force: false });
+
+      if (didRefreshQuote) {
+        refreshedQuotes += 1;
+      }
+
+      if (didRefreshHistory) {
+        refreshedHistory += 1;
+      }
+    }
+
+    saveState();
+    render();
+
+    const messages = [];
+    if (refreshedQuotes > 0) {
+      messages.push(`Updated ${refreshedQuotes} holding${refreshedQuotes === 1 ? "" : "s"}`);
+    }
+    if (refreshedHistory > 0) {
+      messages.push(`refreshed ${refreshedHistory} chart histor${refreshedHistory === 1 ? "y" : "ies"}`);
+    }
+
+    setApiStatus(
+      messages.length ? `${messages.join(" and ")} automatically.` : "Market data was already up to date.",
+      "success"
+    );
   } catch (error) {
     setApiStatus(error.message, "error");
   } finally {
