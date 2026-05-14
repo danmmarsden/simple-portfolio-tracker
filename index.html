@@ -94,170 +94,59 @@
             </table>
           </div>
           <p id="empty-state" class="empty-state">
-            No holdings yet. Add your first share above to get started.
+            No holdings yet. Sync your Google Sheet to load the holdings list, then enter the number of shares you hold in the table.
           </p>
           <p id="holdings-last-updated" class="table-meta hidden"></p>
         </section>
 
         <section class="card forms-card">
           <div class="forms-grid">
-            <form id="holding-form" class="form-panel">
-              <div class="section-heading compact">
-                <div>
-                  <p class="eyebrow">Holdings</p>
-                  <h2>Add a share</h2>
-                </div>
-              </div>
-
-              <div class="holding-fields-inline">
-                <label>
-                  Ticker
-                  <input
-                    id="ticker-input"
-                    name="ticker"
-                    placeholder="AAPL"
-                    maxlength="10"
-                    required
-                  />
-                </label>
-
-                <label>
-                  Number of shares
-                  <input
-                    id="shares-input"
-                    name="shares"
-                    type="number"
-                    min="0"
-                    step="0.0001"
-                    placeholder="10"
-                    required
-                  />
-                </label>
-              </div>
-
-              <p id="holding-status" class="status-text" aria-live="polite">
-                Tickers are syntax-checked, and with an API key the app will also try to verify them.
-              </p>
-
-              <div class="inline-actions holding-actions-inline">
-                <button class="primary-button" type="submit">Save holding</button>
-                <button id="clear-holding-form" class="ghost-button" type="button">
-                  Clear form
-                </button>
-              </div>
-            </form>
-
             <section class="form-panel collapsible-panel">
               <button
-                id="toggle-market-data"
+                id="toggle-sheet-sync"
                 class="collapse-toggle"
                 type="button"
                 aria-expanded="false"
-                aria-controls="market-data-content"
+                aria-controls="sheet-sync-content"
               >
                 <span>
-                  <span class="eyebrow">Market Data</span>
-                  <strong>Connect Alpha Vantage</strong>
+                  <span class="eyebrow">Sheet Sync</span>
+                  <strong>Use Google Sheets as the data source</strong>
                 </span>
-                <span id="market-data-toggle-label">Show</span>
+                <span id="sheet-sync-toggle-label">Show</span>
               </button>
 
-              <div id="market-data-content" class="collapsed-content hidden">
-                <form id="settings-form" class="nested-form">
+              <div id="sheet-sync-content" class="collapsed-content hidden">
+                <form id="sheet-settings-form" class="nested-form">
                   <label>
-                    API key
+                    Published CSV URL
                     <input
-                      id="api-key-input"
-                      name="apiKey"
-                      placeholder="Enter your Alpha Vantage key"
+                      id="sheet-csv-url-input"
+                      name="sheetCsvUrl"
+                      placeholder="https://docs.google.com/spreadsheets/..."
                       autocomplete="off"
                     />
                   </label>
 
                   <p class="help-text">
-                    Free keys are available from
-                    <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noreferrer">
-                      Alpha Vantage
-                    </a>.
-                    Their free quote endpoint is typically end-of-day for all users. US holdings are converted to GBP automatically.
+                    Publish a Google Sheet tab as CSV, then paste the URL here. The app expects columns named
+                    <code>ticker</code> and <code>price</code>. Optional columns are <code>previousClose</code>,
+                    <code>currency</code>, <code>date</code>, and <code>company</code>. The app keeps your share counts locally and uses the sheet date as the end-of-day snapshot date for the chart.
                   </p>
 
                   <div class="inline-actions">
-                    <button class="primary-button" type="submit">Save key</button>
-                    <button id="clear-api-key" class="ghost-button" type="button">
-                      Clear key
+                    <button class="primary-button" type="submit">Save source</button>
+                    <button id="sync-sheet-now" class="secondary-button" type="button">
+                      Sync now
+                    </button>
+                    <button id="clear-sheet-source" class="ghost-button" type="button">
+                      Clear source
                     </button>
                   </div>
 
-                  <p id="api-status" class="status-text" aria-live="polite">
-                    Add your API key, then use Refresh prices to pull quotes for your holdings.
+                  <p id="sheet-status" class="status-text" aria-live="polite">
+                    Add a published Google Sheets CSV URL to import the end-of-day holdings list and prices.
                   </p>
-                </form>
-              </div>
-            </section>
-
-            <section class="form-panel collapsible-panel">
-              <button
-                id="toggle-manual-quote"
-                class="collapse-toggle"
-                type="button"
-                aria-expanded="false"
-                aria-controls="manual-quote-content"
-              >
-                <span>
-                  <span class="eyebrow">Prices</span>
-                  <strong>Manual daily quote</strong>
-                </span>
-                <span id="manual-quote-toggle-label">Show</span>
-              </button>
-
-              <div id="manual-quote-content" class="collapsed-content hidden">
-                <form id="quote-form" class="nested-form">
-                  <p class="help-text">
-                    This is a fallback. Use it if you want to enter a price yourself
-                    or if the API is unavailable or rate-limited.
-                  </p>
-
-                  <label>
-                    Ticker
-                    <input
-                      id="quote-ticker-input"
-                      name="ticker"
-                      placeholder="AAPL"
-                      maxlength="10"
-                      required
-                    />
-                  </label>
-
-                  <label>
-                    Current price
-                    <input
-                      id="price-input"
-                      name="price"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="212.45"
-                      required
-                    />
-                  </label>
-
-                  <label>
-                    Previous close
-                    <input
-                      id="previous-close-input"
-                      name="previousClose"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="209.10"
-                      required
-                    />
-                  </label>
-
-                  <button class="secondary-button" type="submit">
-                    Save quote
-                  </button>
                 </form>
               </div>
             </section>

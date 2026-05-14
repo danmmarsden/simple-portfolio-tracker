@@ -404,13 +404,6 @@ tfoot td {
   font-weight: 600;
 }
 
-.holding-meta-manual {
-  color: var(--secondary);
-  font-size: 0.62rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
 .shares-editor {
   display: inline-flex;
   align-items: center;
@@ -485,7 +478,7 @@ tfoot td {
 
 .forms-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -707,14 +700,6 @@ button:disabled {
   color: var(--primary);
 }
 
-#holding-form label {
-  font-size: 0.76rem;
-}
-
-#holding-form input {
-  padding: 9px 11px;
-}
-
 @keyframes flash-update {
   0% {
     box-shadow: 0 0 0 0 rgba(173, 198, 255, 0.22);
@@ -724,12 +709,6 @@ button:disabled {
   100% {
     box-shadow: var(--shadow);
     border-color: rgba(255, 255, 255, 0.06);
-  }
-}
-
-@media (max-width: 1080px) {
-  .forms-grid {
-    grid-template-columns: 1fr;
   }
 }
 
